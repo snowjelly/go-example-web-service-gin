@@ -70,7 +70,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 	// data["counter"] = counter
 	// data["next"] = counter + 1
 	data := make(map[string]string)
-	if err, announcement := getLatestAnnouncement(); err == nil {
+	if announcement, err := getLatestAnnouncement(); err == nil {
 		data["announcement"] = announcement.Text
 	}
 
@@ -104,7 +104,7 @@ type announcementRecord struct {
 	Text string `json:"text"`
 }
 
-func getLatestAnnouncement() (error, announcementRecord) {
+func getLatestAnnouncement() (announcementRecord, error) {
 	var announcements CollectionList
 
     // make GET request to API to get user by ID
@@ -137,10 +137,10 @@ func getLatestAnnouncement() (error, announcementRecord) {
     fmt.Println("Status: ", response.Status)
 
 		if len(announcements.Items) == 0 {
-			return errors.New("No announcements found"), announcements.Items[0]
+			return announcementRecord{}, errors.New("no announcements found")
 		}
 
     // clean up memory after execution
    defer response.Body.Close()
-	 return nil, announcements.Items[0]
+	 return announcements.Items[0], nil
 }
