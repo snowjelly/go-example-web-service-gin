@@ -2,9 +2,12 @@
 package main
 
 import (
+	"encoding/json"
+	"errors"
+	"fmt"
 	"html/template"
+	"io"
 	"net/http"
-	"strconv"
 )
 
 /***********************
@@ -34,6 +37,7 @@ func init() {
 	</head>
 	<body>
 		<h1>Template Fragment Example</h1>
+		<div>{{.announcement}}</div>
 		
 		<p>This page demonstrates how to create and serve 
 		<a href="https://htmx.org/essays/template-fragments/">template fragments</a> 
@@ -56,16 +60,19 @@ func init() {
 func handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	// Collect state info to pass to the template
-	counter, _ := strconv.Atoi(r.URL.Query().Get("counter"))
 	templateName := r.URL.Query().Get("template")
 	if templateName == "" {
 		templateName = "main" // default value in case the query parameter is missing
 	}
 
 	// Pack state info into a map to pass to the template
-	data := make(map[string]int)
-	data["counter"] = counter
-	data["next"] = counter + 1
+	// data := make(map[string]int)
+	// data["counter"] = counter
+	// data["next"] = counter + 1
+	data := make(map[string]string)
+	if err, announcement := getLatestAnnouncement(); err == nil {
+		data["announcement"] = announcement.Text
+	}
 
 	// Execute the template and handle errors
 	if err := page.ExecuteTemplate(w, templateName, data); err != nil {
@@ -75,6 +82,65 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 
 // main is the entry point for the program. It sets up and executes the HTTP server.
 func main() {
+	getLatestAnnouncement()
 	http.HandleFunc("/", handleRequest)
 	http.ListenAndServe(":8080", nil)
+}
+
+type CollectionList struct {
+	Page int `json:"page"`
+	PerPage int `json:"perPage"`
+	TotalPages int `json:"totalPages"`
+	TotalItems int `json:"totalItems"`
+	Items []announcementRecord `json:"items"`
+}
+
+type announcementRecord struct {
+	ID string `json:"id"`
+	CollectionId string `json:"collectionId"`
+	CollectionName string `json:"collectionName"`
+	Created string `json:"created"`
+	Updated string `json:"updated"`
+	Text string `json:"text"`
+}
+
+func getLatestAnnouncement() (error, announcementRecord) {
+	var announcements CollectionList
+
+    // make GET request to API to get user by ID
+    apiUrl := "http://192.168.4.144:8080/api/collections/announcements/records?perPage=1&skipTotal=true&sort=-created"
+    request, err := http.NewRequest("GET", apiUrl, nil)
+
+    if err != nil {
+        fmt.Println(err)
+    }
+
+    request.Header.Set("Content-Type", "application/json; charset=utf-8")
+
+    client := &http.Client{}
+    response, err := client.Do(request)
+
+    if err != nil {
+        fmt.Println(err)
+    }
+
+    responseBody, err := io.ReadAll(response.Body)
+
+    if err != nil {
+        fmt.Println(err)
+    }
+
+		er := json.Unmarshal(responseBody, &announcements)
+		if er != nil {
+			fmt.Println(er)
+		}
+    fmt.Println("Status: ", response.Status)
+
+		if len(announcements.Items) == 0 {
+			return errors.New("No announcements found"), announcements.Items[0]
+		}
+
+    // clean up memory after execution
+   defer response.Body.Close()
+	 return nil, announcements.Items[0]
 }
