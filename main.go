@@ -1,66 +1,80 @@
+// credits to benpate for the source code: https://gist.github.com/benpate/f92b77ea9b3a8503541eb4b9eb515d8a
 package main
 
 import (
+	"html/template"
 	"net/http"
-
-	"github.com/gin-gonic/gin"
+	"strconv"
 )
 
-// postAlbums adds an album from JSON received in the request body.
-func postAlbums(c *gin.Context) {
-	var newAlbum album
+/***********************
+This is a simple demonstration of how to use the built-in template package in Go to implement
+"template fragments" as described here: https://htmx.org/essays/template-fragments/
+Go accomplishes this with the {{block}} action (described here: https://pkg.go.dev/text/template)
+which defines and executes a template fragment inline inside of another template.  You only have
+to wire up your application to use the correct template name and the fragment will be executed.
+************************/
+
+var page *template.Template
+
+// init function sets up the template+fragment.  Most of the work is actually done here.
+// In a larger program, this would likely be stored in a separate file, but this makes for a
+// simple example.
+func init() {
+
+	page = template.New("main")
+
+	page = template.Must(page.Parse(`<!DOCTYPE html>
 	
-	// Call BindJSON to bind the received JSON to 
-	// newAlbum.
-	if err := c.BindJSON(&newAlbum); err != nil {
-		return
+	<html>
+	<head>
+		<script src="https://unpkg.com/htmx.org@1.8.0"></script>
+		<link rel="stylesheet" href="https://unpkg.com/missing.css@1.1.1"/>
+		<title>Template Fragment Example</title>
+	</head>
+	<body>
+		<h1>Template Fragment Example</h1>
+		
+		<p>This page demonstrates how to create and serve 
+		<a href="https://htmx.org/essays/template-fragments/">template fragments</a> 
+		using the <a href="https://pkg.go.dev/text/template">built-in template package</a> in Go.</p>
+		
+		<p>This is accomplished by using the "block" action in the template, which lets you
+		define and execute a sub-template in a single step.</p>
+		<!-- Here's the fragment.  We can target it by executing the "buttonOnly" template. -->
+		{{block "buttonOnly" .}}
+			<button hx-get="/?counter={{.next}}&template=buttonOnly" hx-swap="outerHTML">
+				This Button Has Been Clicked {{.counter}} Times
+			</button>
+		{{end}}
+	</body>
+	</html>`))
+}
+
+// handleRequest does the work to execute the template (or fragment) and serve the result.
+// It's mostly boilerplate, so don't get hung up on it.
+func handleRequest(w http.ResponseWriter, r *http.Request) {
+
+	// Collect state info to pass to the template
+	counter, _ := strconv.Atoi(r.URL.Query().Get("counter"))
+	templateName := r.URL.Query().Get("template")
+	if templateName == "" {
+		templateName = "main" // default value in case the query parameter is missing
 	}
 
-	// Add the new album to the slice.
-	albums = append(albums, newAlbum)
-	c.IndentedJSON(http.StatusCreated, newAlbum)
-}
+	// Pack state info into a map to pass to the template
+	data := make(map[string]int)
+	data["counter"] = counter
+	data["next"] = counter + 1
 
-// getAlbumByID locates the album whose ID value matches the id
-// parameter sent by the client, then returns that album as a response.
-func getAlbumByID(c *gin.Context) {
-	id := c.Param("id")
-
-	// Loop over the list of albums, looking for
-	// an album whose ID value matches the parameter.
-	for _, a := range albums {
-		if a.ID == id {
-			c.IndentedJSON(http.StatusOK, a)
-			return
-		}
+	// Execute the template and handle errors
+	if err := page.ExecuteTemplate(w, templateName, data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
-	c.IndentedJSON(http.StatusNotFound, gin.H{"message": "album not found"})
 }
 
-// album represents data about a record album.
-type album struct {
-	ID string `json:"id"`
-	Title string `json:"title"`
-	Artist string `json:"artist"`
-	Price float64 `json:"price"`
-}
-
-var albums = []album{
-	  {ID: "1", Title: "Blue Train", Artist: "John Coltrane", Price: 56.99},
-    {ID: "2", Title: "Jeru", Artist: "Gerry Mulligan", Price: 17.99},
-    {ID: "3", Title: "Sarah Vaughan and Clifford Brown", Artist: "Sarah Vaughan", Price: 39.99},
-}
-
+// main is the entry point for the program. It sets up and executes the HTTP server.
 func main() {
-	router := gin.Default()
-	router.GET("/albums", getAlbums)
-	router.GET("albums/:id", getAlbumByID)
-	router.POST("/albums", postAlbums)
-
-	router.Run("localhost:8080")
-}
-
-// getAlbums responds with the list of all albums as JSON.
-func getAlbums(c *gin.Context) {
-	c.IndentedJSON(http.StatusOK, albums)
+	http.HandleFunc("/", handleRequest)
+	http.ListenAndServe(":8080", nil)
 }
